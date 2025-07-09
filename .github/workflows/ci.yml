@@ -31,20 +31,8 @@ jobs:
         run: | 
           echo "127.0.0.1 ${{ env.CI_NGINX_SERVER_NAME }}" | sudo tee -a /etc/hosts
 
-      - name: Wait for Django health check
-        timeout-minutes: 5
-        run: |
-          for i in $(seq 1 30); do
-            response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ env.CI_NGINX_SERVER_NAME }}/health/)
-            if [ "$response" -eq 200 ]; then
-              echo "Django health check passed."
-              exit 0
-            fi
-            echo "Waiting for Django health check (attempt $i/30)..."
-            sleep 10
-          done
-          echo "Django health check failed after multiple attempts." 
-          exit 1
+      - name: Wait for Nginx service to be healthy
+        run: docker compose wait nginx
 
       - name: Test the containers
         run: |
