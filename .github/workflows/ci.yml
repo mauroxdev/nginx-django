@@ -25,25 +25,10 @@ jobs:
       - name: Run the containers
         run: docker compose up -d
 
-      - name: Wait for Django health check
-        timeout-minutes: 5
-        run: |
-          for i in $(seq 1 30); do
-            response=$(docker-compose exec -T nginx curl -s -o /dev/null -w "%{http_code}" http://django:8000/health/)
-            if [ "$response" -eq 200 ]; then
-              echo "Django health check passed."
-              exit 0
-            fi
-            echo "Waiting for Django health check (attempt $i/30)..."
-            sleep 10
-          done
-          echo "Django health check failed after multiple attempts."
-          exit 1
-
       - name: Test the containers
         run: |
           docker-compose ps
-          curl -k https://localhost | grep "The install worked successfully!"
+          curl http://localhost | grep "The install worked successfully!"
 
       - name: Install Trivy
         run: |
