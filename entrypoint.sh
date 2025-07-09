@@ -13,4 +13,7 @@ fi
 export DOLLAR='$' 
 envsubst < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 
+# Test Nginx configuration after substitution
+nginx -t
+
 exec "$@"
