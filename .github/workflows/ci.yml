@@ -11,6 +11,8 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      CI_NGINX_SERVER_NAME: localhost
 
     steps:
       - name: Check out code
@@ -25,10 +27,25 @@ jobs:
       - name: Run the containers
         run: docker compose up -d
 
+      - name: Wait for Django health check
+        timeout-minutes: 5
+        run: |
+          for i in $(seq 1 30); do
+            response=$(curl -s -o /dev/null -w "%{http_code}" http://${{ env.CI_NGINX_SERVER_NAME }}/health/)
+            if [ "$response" -eq 200 ]; then
+              echo "Django health check passed."
+              exit 0
+            fi
+            echo "Waiting for Django health check (attempt $i/30)..."
+            sleep 10
+          done
+          echo "Django health check failed after multiple attempts." 
+          exit 1
+
       - name: Test the containers
         run: |
           docker compose ps
-          curl http://localhost | grep "The install worked successfully!"
+          curl http://${{ env.CI_NGINX_SERVER_NAME }} | grep "The install worked successfully!"
 
       - name: Install Trivy
         run: |
