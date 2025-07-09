@@ -1,0 +1,50 @@
+version: '3.7'
+
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certs:/etc/nginx/certs
+      - static_volume:/app/static
+      - gunicorn_socket:/run
+      - ./certbot/www:/var/www/certbot
+    environment:
+      - NGINX_SERVER_NAME=your_domain.com
+      - SSL_CERT_NAME=cert.pem
+      - SSL_KEY_NAME=key.pem
+      - CLOUDFLARE_ONLY=false
+      - NGINX_WORKER_PROCESSES=1
+      - NGINX_WORKER_CONNECTIONS=256
+      - CERTBOT_ENABLED=false
+      - CERTBOT_EMAIL=your_email@example.com
+    depends_on:
+      - django
+
+  django:
+    build:
+      context: ./${DJANGO_APP_DIR:-django_app}
+      dockerfile: Dockerfile
+    volumes:
+      - static_volume:/app/static
+      - gunicorn_socket:/run
+    environment:
+      - GUNICORN_CMD=gunicorn --workers 2 --bind unix:/run/gunicorn.sock ${DJANGO_APP_NAME:-django_app}.wsgi:application
+    expose:
+      - "8000"
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./certs:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+volumes:
+  static_volume:
+  gunicorn_socket:
+  grafana_data:

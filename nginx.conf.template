@@ -1,0 +1,72 @@
+user ${NGINX_USER:-www-data};
+worker_processes ${NGINX_WORKER_PROCESSES:-1};
+pid /run/nginx.pid;
+
+events {
+    worker_connections ${NGINX_WORKER_CONNECTIONS:-256};
+}
+
+http {
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_prefer_server_ciphers on;
+
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    gzip on;
+    gzip_disable "msie6";
+
+    # Cloudflare
+    if ( ${CLOUDFLARE_ONLY} = true ) {
+        include /etc/nginx/cloudflare.conf;
+    }
+
+    upstream django {
+        server unix:/run/gunicorn.sock fail_timeout=0;
+    }
+
+    server {
+        listen 80;
+        server_name ${NGINX_SERVER_NAME:-your_domain.com};
+        return 301 https://${DOLLAR}server_name${DOLLAR}request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name ${NGINX_SERVER_NAME:-your_domain.com};
+
+        ssl_certificate /etc/nginx/certs/${SSL_CERT_NAME:-cert.pem};
+        ssl_certificate_key /etc/nginx/certs/${SSL_KEY_NAME:-key.pem};
+
+        # Allow traffic only from Cloudflare
+        if ( ${CLOUDFLARE_ONLY} = true ) {
+            if ($http_cf_connecting_ip = "") {
+                return 403;
+            }
+        }
+
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        location /static/ {
+            alias /app/static/;
+        }
+
+        location / {
+            proxy_pass http://django;
+            proxy_set_header Host ${DOLLAR}host;
+            proxy_set_header X-Real-IP ${DOLLAR}remote_addr;
+            proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
+        }
+    }
+}
