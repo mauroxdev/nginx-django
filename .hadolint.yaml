@@ -1,0 +1,4 @@
+failure-threshold: warning
+format: tty
+ignored:
+- DL3018
