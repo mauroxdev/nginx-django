@@ -27,7 +27,7 @@ jobs:
 
       - name: Test the containers
         run: |
-          docker-compose ps
+          docker compose ps
           curl http://localhost | grep "The install worked successfully!"
 
       - name: Install Trivy
