@@ -29,7 +29,7 @@ jobs:
         timeout-minutes: 5
         run: |
           for i in $(seq 1 30); do
-            response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/health/)
+            response=$(curl -s -o /dev/null -w "%{http_code}" https://nginx/health/)
             if [ "$response" -eq 200 ]; then
               echo "Django health check passed."
               exit 0
@@ -42,8 +42,8 @@ jobs:
 
       - name: Test the containers
         run: |
-          docker compose ps
-          curl -k https://localhost | grep "The install worked successfully!"
+          docker-compose ps
+          curl -k https://nginx | grep "The install worked successfully!"
 
       - name: Install Trivy
         run: |
