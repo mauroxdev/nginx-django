@@ -12,7 +12,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     env:
-      CI_NGINX_SERVER_NAME: localhost
+      CI_NGINX_SERVER_NAME: mytestdomain.com
 
     steps:
       - name: Check out code
@@ -26,6 +26,13 @@ jobs:
 
       - name: Run the containers
         run: docker compose up -d
+
+      - name: Add custom domain to hosts
+        run: | 
+          echo "127.0.0.1 ${{ env.CI_NGINX_SERVER_NAME }}" | sudo tee -a /etc/hosts
+
+      - name: Test Nginx configuration syntax
+        run: docker-compose exec nginx nginx -t
 
       - name: Wait for Django health check
         timeout-minutes: 5
