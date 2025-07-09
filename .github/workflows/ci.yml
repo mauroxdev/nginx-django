@@ -31,6 +31,9 @@ jobs:
         run: | 
           echo "127.0.0.1 ${{ env.CI_NGINX_SERVER_NAME }}" | sudo tee -a /etc/hosts
 
+      - name: Wait for Docker Compose services to be recognized
+        run: sleep 5
+
       - name: Wait for Nginx service to be healthy
         run: docker compose wait nginx
 
