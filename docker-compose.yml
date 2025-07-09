@@ -14,7 +14,7 @@ services:
       - gunicorn_socket:/run
       - ./certbot/www:/var/www/certbot
     environment:
-      - NGINX_SERVER_NAME=your_domain.com
+      - NGINX_SERVER_NAME=localhost
       - SSL_CERT_NAME=cert.pem
       - SSL_KEY_NAME=key.pem
       - CLOUDFLARE_ONLY=false
