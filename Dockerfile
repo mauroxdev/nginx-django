@@ -7,6 +7,7 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
+COPY templates /etc/nginx/templates
 
 RUN mkdir -p /var/log/supervisor
 
