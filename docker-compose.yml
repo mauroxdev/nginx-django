@@ -25,7 +25,9 @@ services:
       - app-network
 
   django:
-    image: django-app:dev
+    build:
+      context: ./django-app
+      dockerfile: Dockerfile
     volumes:
       - static_volume:/app/static
       - gunicorn_socket:/run
