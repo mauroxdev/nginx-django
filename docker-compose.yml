@@ -1,52 +1,42 @@
-version: '3.8'
 
 services:
   nginx:
+    command: [nginx-debug, '-g', 'daemon off;']
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "80:80"
+      - "8081:80"
+      - "8443:443"
     volumes:
       - static_volume:/app/static:ro
       - gunicorn_socket:/run
+      - ./certs:/etc/nginx/certs
     environment:
-      - NGINX_SERVER_NAME=${CI_NGINX_SERVER_NAME:-localhost}
-      - NGINX_SSL_ENABLED=${NGINX_SSL_ENABLED:-false}
-      - CLOUDFLARE_ONLY=${CLOUDFLARE_ONLY:-false}
+      - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}
+      - NGINX_SSL_ENABLED=true
+      - CLOUDFLARE_ONLY=true
       - NGINX_WORKER_PROCESSES=${NGINX_WORKER_PROCESSES:-1}
       - NGINX_WORKER_CONNECTIONS=${NGINX_WORKER_CONNECTIONS:-512}
     depends_on:
-      django:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f -H \"Host: $NGINX_SERVER_NAME\" http://localhost/health/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
+      - django
+    
     networks:
       - app-network
 
   django:
-    build:
-      context: ./${DJANGO_APP_DIR:-django_app}
-      dockerfile: Dockerfile
+    image: django-app:dev
     volumes:
       - static_volume:/app/static
       - gunicorn_socket:/run
     environment:
-      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-django_app.settings}
+      - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}
+      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-django_nginx.settings}
       - DJANGO_APP_NAME=${DJANGO_APP_NAME:-django_app}
     command: >
       sh -c "python manage.py collectstatic --noinput &&
-             gunicorn --workers 1 --bind unix:/run/gunicorn.sock ${DJANGO_APP_NAME}.wsgi:application"
-    healthcheck:
-      test: ["CMD", "python", "manage.py", "check"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+             gunicorn --workers 1 --bind unix:/run/gunicorn.sock django_nginx.wsgi:application"
+    
     networks:
       - app-network
 

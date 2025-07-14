@@ -1,6 +1,6 @@
-FROM nginx:alpine
+FROM nginx:alpine3.22
 
-RUN apk --no-cache add supervisor wget
+RUN apk --no-cache add openssl
 
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY entrypoint.sh /entrypoint.sh
@@ -12,4 +12,4 @@ COPY templates /etc/nginx/templates
 RUN mkdir -p /var/log/supervisor
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+CMD ["nginx", "-g", "daemon off;"]

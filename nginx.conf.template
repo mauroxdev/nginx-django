@@ -1,9 +1,9 @@
-user ${NGINX_USER:-www-data};
-worker_processes ${NGINX_WORKER_PROCESSES:-1};
+user ${NGINX_USER};
+worker_processes ${NGINX_WORKER_PROCESSES};
 pid /run/nginx.pid;
 
 events {
-    worker_connections ${NGINX_WORKER_CONNECTIONS:-256};
+    worker_connections ${NGINX_WORKER_CONNECTIONS};
 }
 
 http {
@@ -16,8 +16,8 @@ http {
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
 
-    access_log /var/log/nginx/access.log;
-    error_log /var/log/nginx/error.log;
+    access_log /var/log/nginx/${NGINX_SERVER_NAME}_access.log;
+    error_log /var/log/nginx/${NGINX_SERVER_NAME}_error.log;
 
     gzip on;
     gzip_disable "msie6";
@@ -29,16 +29,8 @@ http {
     # HTTP server
     server {
         listen 80;
-        server_name ${NGINX_SERVER_NAME:-your_domain.com};
-
-        # Conditionally include Cloudflare config
-        include /etc/nginx/conf.d/cloudflare.conf;
-
-        # Conditionally include SSL redirect
-        include /etc/nginx/conf.d/ssl_redirect.conf;
-
-        # Common locations
-        include /etc/nginx/conf.d/locations.conf;
+        server_name ${NGINX_SERVER_NAME};
+        return 301 https://$server_name$request_uri;
     }
 
     # HTTPS server (conditionally created)

@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Python
+*.pyc
+__pycache__/
+
+# macOS
+.DS_Store
+
+# Environment
+.env
+*.log
+
+# Docker
+docker-compose.yml
+
+# Certificates and Certbot (mounted as volumes)
+certs/
+certbot/
+
+
+
+# Documentation
+README.md
