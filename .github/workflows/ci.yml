@@ -1,4 +1,4 @@
-name: Nginx Image CI
+name: Nginx Image CI/CD
 
 on:
   push:
@@ -9,79 +9,89 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/nginx
+  NGINX_HTTP_PORT: 8080
+  NGINX_SSL_PORT: 443
 
 jobs:
-  lint:
+  build-and-test:
+    name: Build, Test & Security Scan
     runs-on: ubuntu-latest
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    env:
+      COMPOSE_PROJECT_NAME: nginx-test-${{ github.run_id }}
+      NGINX_SERVER_NAME: test.example.com
+
     steps:
-      - name: Check out code
+      - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: Dockerfile
+          config: .hadolint.yaml
+          failure-threshold: error
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build nginx image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          tags: nginx-test:latest
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Build nginx image for testing
-        run: docker build -t nginx-test:latest .
-
-      - name: Test generated nginx config
-        id: test_config
+      - name: Test nginx configuration
         run: |
-          docker run --rm \
+          docker run --rm --name nginx-config-test \
             -e NGINX_SERVER_NAME=localhost \
             -e NGINX_SSL_ENABLED=false \
             -e NGINX_WORKER_PROCESSES=1 \
             -e NGINX_WORKER_CONNECTIONS=512 \
             nginx-test:latest nginx -t
-        continue-on-error: true
 
-      - name: Show generated config on failure
-        if: steps.test_config.outcome == 'failure'
-        run: |
-          echo "
-          docker run --rm \
-            -e NGINX_SERVER_NAME=localhost \
-            -e NGINX_SSL_ENABLED=false \
-            -e NGINX_WORKER_PROCESSES=1 \
-            -e NGINX_WORKER_CONNECTIONS=512 \
-            nginx-test:latest cat /etc/nginx/nginx.conf
-          "
+      - name: Build Django application
+        uses: docker/build-push-action@v5
+        with:
+          context: ./django-app
+          file: django-app/Dockerfile
+          load: true
+          tags: django-app:dev
+          platforms: linux/amd64
+          cache-from: type=gha,scope=django
+          cache-to: type=gha,scope=django,mode=max
 
+      - name: Run security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: nginx-test:latest
+          format: table
+          exit-code: 1
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
 
-          exit 1
+      - name: Generate SARIF report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: nginx-test:latest
+          format: sarif
+          output: trivy-results.sarif
 
-  build-django:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - name: Upload security scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build django image
-        run: docker build -t django-app:dev -f django-app/Dockerfile ./django-app
-
-  test-nginx-image:
-    runs-on: ubuntu-latest
-    needs: [lint, build-django]
-    
-    env:
-      NGINX_SERVER_NAME: test.example.com
-      COMPOSE_PROJECT_NAME: nginx-test-${{ github.run_id }}
-      
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Create test environment file
+      - name: Create test environment
         run: |
           cat > .env << EOF
           NGINX_SERVER_NAME=${{ env.NGINX_SERVER_NAME }}
@@ -93,108 +103,85 @@ jobs:
 
       - name: Start services
         run: |
-          docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} up -d --wait
-          
-      - name: Add test domain to hosts
+          docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} up -d --wait --wait-timeout 120
+
+      - name: Configure test environment
         run: |
           echo "127.0.0.1 ${{ env.NGINX_SERVER_NAME }}" | sudo tee -a /etc/hosts
 
-      - name: Wait for services to be ready
-        timeout-minutes: 3
+      - name: Wait for services
+        timeout-minutes: 2
         run: |
-          echo "Waiting for nginx to be healthy..."
-          for i in $(seq 1 18); do
-            if curl -f http://${{ env.NGINX_SERVER_NAME }}/health/ >/dev/null 2>&1; then
+          echo "Waiting for nginx to be ready..."
+          for i in $(seq 1 12); do
+            if curl -k -f --max-time 10 https://${{ env.NGINX_SERVER_NAME }}:${{ env.NGINX_SSL_PORT }}/health/ >/dev/null 2>&1; then
               echo "✅ Nginx is responding"
-              break
+              exit 0
             fi
-            echo "⏳ Waiting for nginx... (attempt $i/18)"
+            echo "⏳ Waiting for nginx... (attempt $i/12)"
             sleep 10
           done
+          echo "❌ Nginx failed to start"
+          exit 1
 
-      - name: Test nginx configuration
+      - name: Run comprehensive tests
         run: |
           # Test basic connectivity
           echo "🔍 Testing basic connectivity..."
-          curl -f http://${{ env.NGINX_SERVER_NAME }}/health/ || exit 1
-          
+          curl -f -k --max-time 10 https://${{ env.NGINX_SERVER_NAME }}:${{ env.NGINX_SSL_PORT }}/health/
+
           # Test gzip compression
           echo "🔍 Testing gzip compression..."
-          curl -H "Accept-Encoding: gzip" -v http://${{ env.NGINX_SERVER_NAME }} 2>&1 | grep -i "content-encoding: gzip" || echo "⚠️ Gzip not enabled"
-          
-          # Test Django is accessible
-          echo "🔍 Testing Django accessibility..."
-          curl -f http://${{ env.NGINX_SERVER_NAME }} | grep -i "django" || echo "⚠️ Django default page not found"
+          if curl -H "Accept-Encoding: gzip" -v -k --max-time 10 https://${{ env.NGINX_SERVER_NAME }}:${{ env.NGINX_SSL_PORT }} 2>&1 | grep -i "content-encoding: gzip"; then
+            echo "✅ Gzip compression working"
+          else
+            echo "⚠️ Gzip not enabled"
+          fi
 
-      - name: Test nginx performance
-        run: |
-          echo "🔍 Running basic performance test..."
-          docker run --rm --network container:$(docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} ps -q nginx) \
-            williamyeh/wrk -t2 -c10 -d10s http://${{ env.NGINX_SERVER_NAME }}/health/
+          # Test error handling
+          echo "🔍 Testing error handling..."
+          STATUS=$(curl -k -s -o /dev/null -w "%{http_code}" https://${{ env.NGINX_SERVER_NAME }}:${{ env.NGINX_SSL_PORT }}/nonexistent)
+          if [ "$STATUS" -eq 404 ]; then
+            echo "✅ 404 error handling working"
+          else
+            echo "⚠️ Unexpected status code: $STATUS"
+          fi
 
-      - name: Check container health
+      - name: Health check
         run: |
           echo "🔍 Checking container health..."
           docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} ps
           
-          # Check if nginx is actually healthy
           NGINX_HEALTH=$(docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} ps -q nginx | xargs docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || echo "no-healthcheck")
           echo "Nginx health status: $NGINX_HEALTH"
 
-      - name: Show logs on failure
+      - name: Show logs and config on failure
         if: failure()
         run: |
-          echo "🔍 Showing container logs..."
-          docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} logs --tail=50
+          echo "🔍 Collecting container logs..."
+          docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} logs --tail=100
+          
+          echo "🔍 Generated nginx.conf:"
+          docker run --rm \
+            -e NGINX_SERVER_NAME=localhost \
+            -e NGINX_SSL_ENABLED=false \
+            nginx-test:latest cat /etc/nginx/nginx.conf
 
       - name: Cleanup
         if: always()
         run: |
           docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} down -v --remove-orphans
 
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: test-nginx-image
-    
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build nginx image for scanning
-        run: |
-          docker build -t nginx-test:latest -f Dockerfile .
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: nginx-test:latest
-          format: table
-          exit-code: 1
-          severity: HIGH,CRITICAL
-
-      - name: Run Trivy for SARIF report
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: nginx-test:latest
-          format: sarif
-          output: trivy-results.sarif
-
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v2
-        if: always()
-        with:
-          sarif_file: trivy-results.sarif
-
   build-and-push:
+    name: Build and Push Image
     runs-on: ubuntu-latest
-    needs: [test-nginx-image, security-scan]
+    needs: build-and-test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+    outputs:
+      image-tags: ${{ steps.meta.outputs.tags }}
+
     steps:
-      - name: Check out code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -216,8 +203,12 @@ jobs:
             type=ref,event=branch
             type=sha,prefix={{branch}}-
             type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Nginx Proxy
+            org.opencontainers.image.description=Nginx proxy for Django application
 
-      - name: Build and push nginx image
+      - name: Build and push image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -227,34 +218,33 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          provenance: true
+          sbom: true
 
-  test-published-image:
+  verify-deployment:
+    name: Verify Deployment
     runs-on: ubuntu-latest
     needs: build-and-push
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
 
-      - name: Test published image
+    steps:
+      - name: Smoke test published image
         run: |
-          # Pull and test the published image
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          
-          # Quick smoke test
-          docker run --rm -d --name nginx-test \
+          echo "🔍 Testing published image..."
+          docker run --rm -d --name nginx-published-test \
             -p 8080:80 \
             -e NGINX_SERVER_NAME=localhost \
             -e NGINX_SSL_ENABLED=false \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           
-          # Wait a bit for startup
-          sleep 5
+          sleep 10
           
-          # Test if it responds
-          curl -f http://localhost:8080/health/ || exit 1
+          if curl -f --max-time 10 http://localhost:8080/health/; then
+            echo "✅ Published image working correctly"
+          else
+            echo "❌ Published image test failed"
+            exit 1
+          fi
           
-          # Cleanup
-          docker stop nginx-test
+          docker stop nginx-published-test

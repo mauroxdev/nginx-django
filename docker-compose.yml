@@ -6,8 +6,8 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8081:80"
-      - "8443:443"
+      - "${NGINX_HTTP_PORT:-8081}:80"
+      - "${NGINX_HTTPS_PORT:-8443}:443"
     volumes:
       - static_volume:/app/staticfiles:ro
       - gunicorn_socket:/run
