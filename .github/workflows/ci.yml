@@ -83,6 +83,8 @@ jobs:
           cat > .env << EOF
           NGINX_SERVER_NAME=${{ env.NGINX_SERVER_NAME }}
           DJANGO_SETTINGS_MODULE=django_nginx.settings
+          NGINX_HTTP_PORT=80
+          NGINX_HTTPS_PORT=443
           CERTBOT_ENABLED=false
           NGINX_SSL_ENABLED=false
           BUILD_TARGET=production
@@ -100,7 +102,7 @@ jobs:
         timeout-minutes: 2
         run: |
           echo "Waiting for nginx to be ready..."
-          for i in $(seq 1 12); do
+          for i in $(seq 1 6); do
             if curl -k -f --max-time 10 https://${{ env.NGINX_SERVER_NAME }}:${{ env.NGINX_SSL_PORT }}/health/ >/dev/null 2>&1; then
               echo "✅ Nginx is responding"
               exit 0
