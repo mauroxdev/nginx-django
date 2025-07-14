@@ -20,7 +20,11 @@ if [ -z "${NGINX_SERVER_NAME}" ]; then
 fi
 
 # Generate configs
-envsubst < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+envsubst '${NGINX_USER} ${NGINX_WORKER_PROCESSES} ${NGINX_WORKER_CONNECTIONS}' \
+    < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+envsubst '${NGINX_SERVER_NAME}' \
+    < "${TEMPLATE_DIR}/django-app.conf" > "${CONFIG_DIR}/django-app.conf"
+
 
 if [ "$CLOUDFLARE_ONLY" = "true" ]; then
     curl -sL https://www.cloudflare.com/ips-v4 -o /tmp/cf_ips_v4
@@ -39,33 +43,23 @@ else
     touch "${CONFIG_DIR}/cloudflare.conf"
 fi
 
-if [ "$NGINX_SSL_ENABLED" = "true" ]; then
-    CERT_PATH="/etc/nginx/certs/${NGINX_SERVER_NAME}.crt"
-    KEY_PATH="/etc/nginx/certs/${NGINX_SERVER_NAME}.key"
+CERT_PATH="/etc/nginx/certs/${NGINX_SERVER_NAME}.crt"
+KEY_PATH="/etc/nginx/certs/${NGINX_SERVER_NAME}.key"
 
-    if [ ! -f "${CERT_PATH}" ] || [ ! -f "${KEY_PATH}" ]; then
-        echo "SSL certificate not found. Generating self-signed certificate for ${NGINX_SERVER_NAME}..."
-        mkdir -p /etc/nginx/certs
-        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout "${KEY_PATH}" \
-            -out "${CERT_PATH}" \
-            -subj "/CN=${NGINX_SERVER_NAME}"
-        echo "Self-signed certificate generated."
-    else
-        echo "Using existing SSL certificate."
-    fi
-
-    echo "Setting ownership of SSL certificates..."
-    chown -R "${NGINX_USER}":"${NGINX_USER}" /etc/nginx/certs
-
-    envsubst < "${TEMPLATE_DIR}/https.conf" > "${CONFIG_DIR}/https.conf"
+if [ ! -f "${CERT_PATH}" ] || [ ! -f "${KEY_PATH}" ]; then
+    echo "SSL certificate not found. Generating self-signed certificate for ${NGINX_SERVER_NAME}..."
+    mkdir -p /etc/nginx/certs
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "${KEY_PATH}" \
+        -out "${CERT_PATH}" \
+        -subj "/CN=${NGINX_SERVER_NAME}"
+    echo "Self-signed certificate generated."
 else
-    touch "${CONFIG_DIR}/https.conf"
+    echo "Using existing SSL certificate."
 fi
 
-cp "${TEMPLATE_DIR}/locations.conf" "${CONFIG_DIR}/locations.conf"
-
-# Fix conf permissions
+echo "Setting ownership of SSL certificates..."
+chown -R "${NGINX_USER}":"${NGINX_USER}" /etc/nginx/certs
 chown -R "${NGINX_USER}":"${NGINX_USER}" "${CONFIG_DIR}"
 
 # Execute the main command

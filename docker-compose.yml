@@ -10,7 +10,7 @@ services:
       - "${NGINX_HTTPS_PORT:-8443}:443"
     volumes:
       - static_volume:/app/staticfiles:ro
-      - gunicorn_socket:/run
+      - gunicorn_socket:/run/gunicorn
       - ./certs:/etc/nginx/certs
     environment:
       - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}
@@ -30,13 +30,13 @@ services:
       dockerfile: Dockerfile
     volumes:
       - static_volume:/app/staticfiles
-      - gunicorn_socket:/run
+      - gunicorn_socket:/run/gunicorn
     environment:
       - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}
       - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-django_nginx.settings}
     command: >
       sh -c "python manage.py collectstatic --noinput &&
-             gunicorn --workers 1 --bind unix:/run/gunicorn.sock django_nginx.wsgi:application"
+             gunicorn --workers 1 --bind unix:/run/gunicorn/django.sock django_nginx.wsgi:application"
     
     networks:
       - app-network
