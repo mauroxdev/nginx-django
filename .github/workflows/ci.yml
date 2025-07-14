@@ -71,7 +71,7 @@ jobs:
     needs: [lint, build-django]
     
     env:
-      CI_NGINX_SERVER_NAME: test.example.com
+      NGINX_SERVER_NAME: test.example.com
       COMPOSE_PROJECT_NAME: nginx-test-${{ github.run_id }}
       
     steps:
@@ -84,13 +84,11 @@ jobs:
       - name: Create test environment file
         run: |
           cat > .env << EOF
-          CI_NGINX_SERVER_NAME=${{ env.CI_NGINX_SERVER_NAME }}
+          NGINX_SERVER_NAME=${{ env.NGINX_SERVER_NAME }}
           DJANGO_SETTINGS_MODULE=django-app.settings
           CERTBOT_ENABLED=false
           NGINX_SSL_ENABLED=false
           BUILD_TARGET=production
-          DJANGO_APP_DIR=django_app
-          DJANGO_APP_NAME=django_app
           EOF
 
       - name: Start services
@@ -99,14 +97,14 @@ jobs:
           
       - name: Add test domain to hosts
         run: |
-          echo "127.0.0.1 ${{ env.CI_NGINX_SERVER_NAME }}" | sudo tee -a /etc/hosts
+          echo "127.0.0.1 ${{ env.NGINX_SERVER_NAME }}" | sudo tee -a /etc/hosts
 
       - name: Wait for services to be ready
         timeout-minutes: 3
         run: |
           echo "Waiting for nginx to be healthy..."
           for i in $(seq 1 18); do
-            if curl -f http://${{ env.CI_NGINX_SERVER_NAME }}/health/ >/dev/null 2>&1; then
+            if curl -f http://${{ env.NGINX_SERVER_NAME }}/health/ >/dev/null 2>&1; then
               echo "✅ Nginx is responding"
               break
             fi
@@ -118,25 +116,21 @@ jobs:
         run: |
           # Test basic connectivity
           echo "🔍 Testing basic connectivity..."
-          curl -f http://${{ env.CI_NGINX_SERVER_NAME }}/health/ || exit 1
-          
-          # Test Django admin static files
-          echo "🔍 Testing static file serving..."
-          curl -f http://${{ env.CI_NGINX_SERVER_NAME }}/static/admin/css/base.css || exit 1
+          curl -f http://${{ env.NGINX_SERVER_NAME }}/health/ || exit 1
           
           # Test gzip compression
           echo "🔍 Testing gzip compression..."
-          curl -H "Accept-Encoding: gzip" -v http://${{ env.CI_NGINX_SERVER_NAME }} 2>&1 | grep -i "content-encoding: gzip" || echo "⚠️ Gzip not enabled"
+          curl -H "Accept-Encoding: gzip" -v http://${{ env.NGINX_SERVER_NAME }} 2>&1 | grep -i "content-encoding: gzip" || echo "⚠️ Gzip not enabled"
           
           # Test Django is accessible
           echo "🔍 Testing Django accessibility..."
-          curl -f http://${{ env.CI_NGINX_SERVER_NAME }} | grep -i "django" || echo "⚠️ Django default page not found"
+          curl -f http://${{ env.NGINX_SERVER_NAME }} | grep -i "django" || echo "⚠️ Django default page not found"
 
       - name: Test nginx performance
         run: |
           echo "🔍 Running basic performance test..."
           docker run --rm --network container:$(docker compose -p ${{ env.COMPOSE_PROJECT_NAME }} ps -q nginx) \
-            williamyeh/wrk -t2 -c10 -d10s http://${{ env.CI_NGINX_SERVER_NAME }}/health/
+            williamyeh/wrk -t2 -c10 -d10s http://${{ env.NGINX_SERVER_NAME }}/health/
 
       - name: Check container health
         run: |

@@ -32,7 +32,6 @@ services:
     environment:
       - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}
       - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-django_nginx.settings}
-      - DJANGO_APP_NAME=${DJANGO_APP_NAME:-django_app}
     command: >
       sh -c "python manage.py collectstatic --noinput &&
              gunicorn --workers 1 --bind unix:/run/gunicorn.sock django_nginx.wsgi:application"
