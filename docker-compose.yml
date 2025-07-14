@@ -9,7 +9,7 @@ services:
       - "8081:80"
       - "8443:443"
     volumes:
-      - static_volume:/app/static:ro
+      - static_volume:/app/staticfiles:ro
       - gunicorn_socket:/run
       - ./certs:/etc/nginx/certs
     environment:
@@ -29,7 +29,7 @@ services:
       context: ./django-app
       dockerfile: Dockerfile
     volumes:
-      - static_volume:/app/static
+      - static_volume:/app/staticfiles
       - gunicorn_socket:/run
     environment:
       - NGINX_SERVER_NAME=${NGINX_SERVER_NAME}

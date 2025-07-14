@@ -85,7 +85,7 @@ jobs:
         run: |
           cat > .env << EOF
           NGINX_SERVER_NAME=${{ env.NGINX_SERVER_NAME }}
-          DJANGO_SETTINGS_MODULE=django-app.settings
+          DJANGO_SETTINGS_MODULE=django_nginx.settings
           CERTBOT_ENABLED=false
           NGINX_SSL_ENABLED=false
           BUILD_TARGET=production
